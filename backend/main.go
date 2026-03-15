@@ -4,15 +4,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
 var (
-	symbols = []string{"AAPL", "AMZN"}
+	symbols     = []string{"AAPL", "AMZN"}
 	tempCandles = make(map[string]*TempCandles)
-	mu sync.Mutex
+	mu          sync.Mutex
+	broadcaster = make(chan *BroadcastMessage)
 )
 
 func main() {
@@ -54,25 +56,67 @@ func connectToFinHub(env *Env) *websocket.Conn {
 
 // handle incoming messages from finhub
 func handleFinnhubIncomingMessages(finnhubConn *websocket.Conn, dbConn *gorm.DB) {
-	finnhubMessage := &FinnHubMessage{}
-
 	for {
-		if err := finnhubConn.ReadJSON(finnhubConn); err != nil {
+		finnhubMessage := &FinnHubMessage{}
+		if err := finnhubConn.ReadJSON(finnhubMessage); err != nil {
 			fmt.Println("Error reading the message", err)
 			continue
 		}
 
 		// try to process if it is trade message
 		if finnhubMessage.Type == "Trade" {
-			for _ , trade := in range finfinnhubMessagen.Data {
+			for _, trade := range finnhubMessage.Data {
 				// process the trade
-				processFinnhubTrade(&trade,db)
+				processFinnhubTrade(&trade, dbConn)
 			}
 		}
 	}
 }
 
 // process trade or update create temporary candles
-func processFinnhubTrade(trade *TradedaTradeData,db *gorm.DB){
-	// mutex lock
+func processFinnhubTrade(trade *TradeData, db *gorm.DB) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	symbol := trade.Symbol
+	price := trade.Price
+	volume := float64(trade.Volume)
+	timestamp := trade.Timestamp // Unix ms
+	tradeTime := time.UnixMilli(timestamp)
+
+	tempCandle, exists := tempCandles[symbol]
+
+	if !exists {
+		candle := tempCandle.toCandle()
+		// save candle to db
+		if err := db.Create(candle).Error; err != nil {
+			fmt.Println("Error saving candle to database", err)
+		}
+
+		broadcaster <- &BroadcastMessage{UpdateType: Closed, Candle: candle}
+
+		// initialize new temp candle
+		tempCandles[symbol] = &TempCandles{
+			Symbol:     symbol,
+			OpenTime:   tradeTime,
+			CloseTime:  tradeTime,
+			OpenPrice:  price,
+			ClosePrice: price,
+			LowPrice:   price,
+			HighPrice:  price,
+			Volume:     volume,
+		}
+		return
+	}
+
+	// Update existing temp candle
+	if price < tempCandle.LowPrice {
+		tempCandle.LowPrice = price
+	}
+	if price > tempCandle.HighPrice {
+		tempCandle.HighPrice = price
+	}
+	tempCandle.ClosePrice = price
+	tempCandle.CloseTime = tradeTime
+	tempCandle.Volume += volume
 }

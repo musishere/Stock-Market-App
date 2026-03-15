@@ -35,3 +35,26 @@ type TradeData struct {
 	Timestamp int64    `json:"t"`
 	Volume    int      `json:"v"`
 }
+
+func (tc *TempCandles) toCandle() *Candle {
+	return &Candle{
+		Symbol:     tc.Symbol,
+		Open:       tc.OpenPrice,
+		Close:      tc.ClosePrice,
+		High:       tc.HighPrice,
+		Low:        tc.LowPrice,
+		Timestamps: tc.CloseTime,
+	}
+}
+
+type BroadcastMessage struct {
+	UpdateType UpdateType `json:"updateType"`
+	Candle     *Candle    `json:"candle"`
+}
+
+type UpdateType string
+
+const (
+	Live   UpdateType = "live"
+	Closed UpdateType = "closed"
+)
