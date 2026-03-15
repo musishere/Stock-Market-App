@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 )
 
 var (
@@ -21,7 +22,7 @@ func main() {
 	finehubConn := connectToFinHub(env)
 	defer finehubConn.Close()
 	// 4. handle incoming messages from finhub
-
+	handleFinnhubIncomingMessages(finehubConn, dbConn)
 	// 5. broadcast all the clients connected
 
 	// --- Endpoints ---
@@ -47,3 +48,6 @@ func connectToFinHub(env *Env) *websocket.Conn {
 
 	return ws
 }
+
+// handle incoming messages from finhub
+func handleFinnhubIncomingMessages(finnhubConn *websocket.Conn, dbConn *gorm.DB) {}
