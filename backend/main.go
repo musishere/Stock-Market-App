@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -11,11 +12,45 @@ import (
 )
 
 var (
-	symbols     = []string{"AAPL", "AMZN"}
-	tempCandles = make(map[string]*TempCandles)
-	mu          sync.Mutex
-	broadcaster = make(chan *BroadcastMessage)
+	symbols           = []string{"AAPL", "AMZN"}
+	tempCandles       = make(map[string]*TempCandles)
+	mu                sync.Mutex
+	broadcaster       = make(chan *BroadcastMessage)
+	clientConnections = make(map[*websocket.Conn]bool)
 )
+
+func WSHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Println("Error upgrading to websocket:", err)
+		return
+	}
+
+	mu.Lock()
+	clientConnections[conn] = true
+	mu.Unlock()
+
+	defer conn.Close()
+	defer func() {
+		mu.Lock()
+		delete(clientConnections, conn)
+		mu.Unlock()
+	}()
+
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			fmt.Println("Error reading message from client:", err)
+			break
+		}
+	}
+}
 
 func main() {
 	// 1. env configuration
@@ -29,10 +64,11 @@ func main() {
 	// 4. handle incoming messages from finhub
 	go handleFinnhubIncomingMessages(finehubConn, dbConn)
 	// 5. broadcast all the clients connected
-
+	go broadCastUpdates()
 	// --- Endpoints ---
 
 	// connect to websocket
+	http.HandleFunc("/ws", WSHandler)
 	// fetch all candles for all of symbols
 	// fetch all candles for specific symbol
 
@@ -119,4 +155,51 @@ func processFinnhubTrade(trade *TradeData, db *gorm.DB) {
 	tempCandle.ClosePrice = price
 	tempCandle.CloseTime = tradeTime
 	tempCandle.Volume += volume
+
+	// store the temp candle for the symbol
+	tempCandles[symbol] = tempCandle
+
+	// write the broadcast message to the channel
+	broadcaster <- &BroadcastMessage{UpdateType: Live, Candle: tempCandle.toCandle()}
 }
+
+// send update every one sec until the candle is closed
+func broadCastUpdates() {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case message := <-broadcaster:
+			if message.UpdateType == Closed {
+				fmt.Printf("Candle closed for %s at %s\n", message.Candle.Symbol, message.Candle.Timestamps.Format(time.RFC3339))
+			} else {
+				fmt.Printf("Broadcasting live update for %s at %s\n", message.Candle.Symbol, message.Candle.Timestamps.Format(time.RFC3339))
+			}
+			// Broadcast to all clients
+			mu.Lock()
+			for client := range clientConnections {
+				err := client.WriteJSON(message)
+				if err != nil {
+					fmt.Printf("Error sending update to client: %v\n", err)
+				}
+			}
+			mu.Unlock()
+		case <-ticker.C:
+			// Optionally send periodic updates or perform cleanup
+			// Example: send latest candle snapshot to all clients
+			mu.Lock()
+			for _, tempCandle := range tempCandles {
+				msg := &BroadcastMessage{UpdateType: Live, Candle: tempCandle.toCandle()}
+				for client := range clientConnections {
+					err := client.WriteJSON(msg)
+					if err != nil {
+						fmt.Printf("Error sending periodic update to client: %v\n", err)
+					}
+				}
+			}
+			mu.Unlock()
+		}
+	}
+}
+
