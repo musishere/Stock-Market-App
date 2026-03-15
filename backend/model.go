@@ -12,6 +12,17 @@ type Candle struct {
 	Timestamps time.Time `json:"timestamps"`
 }
 
+type TempCandles struct {
+	Symbol     string
+	OpenTime   time.Time
+	CloseTime  time.Time
+	OpenPrice  float64
+	ClosePrice float64
+	LowPrice   float64
+	HighPrice  float64
+	Volume     float64
+}
+
 type FinnHubMessage struct {
 	Data []TradeData `json:"data"`
 	Type string      `json:"type"` // ping | trade

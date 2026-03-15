@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
 )
 
 var (
-	symbols = []string{"AAPL", "AMZN", "BINANCE:BTCUSDT", "IC MARKETS:1"}
+	symbols = []string{"AAPL", "AMZN"}
+	tempCandles = make(map[string]*TempCandles)
+	mu sync.Mutex
 )
 
 func main() {
@@ -22,7 +25,7 @@ func main() {
 	finehubConn := connectToFinHub(env)
 	defer finehubConn.Close()
 	// 4. handle incoming messages from finhub
-	handleFinnhubIncomingMessages(finehubConn, dbConn)
+	go handleFinnhubIncomingMessages(finehubConn, dbConn)
 	// 5. broadcast all the clients connected
 
 	// --- Endpoints ---
@@ -50,4 +53,26 @@ func connectToFinHub(env *Env) *websocket.Conn {
 }
 
 // handle incoming messages from finhub
-func handleFinnhubIncomingMessages(finnhubConn *websocket.Conn, dbConn *gorm.DB) {}
+func handleFinnhubIncomingMessages(finnhubConn *websocket.Conn, dbConn *gorm.DB) {
+	finnhubMessage := &FinnHubMessage{}
+
+	for {
+		if err := finnhubConn.ReadJSON(finnhubConn); err != nil {
+			fmt.Println("Error reading the message", err)
+			continue
+		}
+
+		// try to process if it is trade message
+		if finnhubMessage.Type == "Trade" {
+			for _ , trade := in range finfinnhubMessagen.Data {
+				// process the trade
+				processFinnhubTrade(&trade,db)
+			}
+		}
+	}
+}
+
+// process trade or update create temporary candles
+func processFinnhubTrade(trade *TradedaTradeData,db *gorm.DB){
+	// mutex lock
+}
