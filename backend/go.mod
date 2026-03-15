@@ -4,7 +4,9 @@ go 1.26.1
 
 require (
 	github.com/caarlos0/env v3.5.0+incompatible
+	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/net v0.21.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
 )
