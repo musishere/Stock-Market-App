@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { w3cwebsocket as W3CWebSocket } from 'websocket';
 
-const WS_URL = 'ws://192.168.1.100:8080/ws'; // Update to your backend IP/port
+const WS_URL = 'ws://192.168.1.100:8080/ws'; // Update to your backend IP
 
 const CandleItem = ({ item }) => {
   const priceColor = item.Close > item.Open ? styles.priceUp : styles.priceDown;
@@ -75,7 +75,7 @@ export default function App() {
       ) : (
         <FlatList
           data={candles}
-          renderItem={CandleItem}
+          renderItem={({ item }) => <CandleItem item={item} />}
           keyExtractor={item => item.Symbol}
           contentContainerStyle={styles.list}
         />
